@@ -1,0 +1,228 @@
+---
+title: "R Notebook"
+output:
+  pdf_document: default
+  html_notebook: default
+---
+Arianna Daringa and Amin Labadi 
+This is an [R Markdown](http://rmarkdown.rstudio.com) Notebook. When you execute code within the notebook, the results appear beneath the code. 
+
+Try executing this chunk by clicking the *Run* button within the chunk or by placing your cursor inside it and pressing *Cmd+Shift+Enter*. 
+```{r}
+#Stock Selector
+
+# seed = 1475933
+# stockchooser=function(seed)
+# {
+#   set.seed(seed)
+#   samp=sample(1:100, 6)
+#   stocklist=read.csv("Stonks.csv", header=FALSE)
+#   print("You are trying to predict")
+#   print(stocklist[samp[1],1])
+#   
+#   print(" using the companies")
+#   print(stocklist[samp[2:6],1])
+#   
+# }
+
+
+#place your CWID below
+CWID = 10475933 #amin's CWID 
+library(quantmod)
+library(rms) #if the determinant of the matrix is too small 
+start = as.Date("2023-01-24")
+end = as.Date("2023-04-24")
+
+AAPL <- getSymbols("AAPL", src = "yahoo", from = start, to = end, auto.assign = FALSE)
+PXD <- getSymbols("PXD", src = "yahoo", from = start, to = end, auto.assign = FALSE)
+TTD <- getSymbols("TTD", src = "yahoo", from = start, to = end, auto.assign = FALSE)
+GOOG <- getSymbols("GOOG", src = "yahoo", from = start, to = end, auto.assign = FALSE)
+ZG <- getSymbols("ZG", src = "yahoo", from = start, to = end, auto.assign = FALSE)
+META <- getSymbols("META", src = "yahoo", from = start, to = end, auto.assign = FALSE)
+
+AAPLadj =as.vector(AAPL$AAPL.Adjusted)
+PXDadj =as.vector(PXD$PXD.Adjusted)
+TTDadj =as.vector(TTD$TTD.Adjusted)
+GOOGadj =as.vector(GOOG$GOOG.Adjusted)
+ZGadj =as.vector(ZG$ZG.Adjusted)
+METAadj =as.vector(META$META.Adjusted)
+
+maindata = AAPLadj
+parameters = data.frame(PXDadj, TTDadj, GOOGadj, ZGadj, METAadj)
+
+
+
+n = length(parameters)
+```
+Create a function that runs a linear regression model on a data set with an unspecified number of predictors and outputs both the coefficients and their associated p-vals.
+
+```{r}
+multiple_linear_reg = function(predictors, predicted) {
+  #x is the number of predicators
+  # y is what we are trying to predict
+
+ 
+  x0= as.matrix(predictors,nrow=ncol(predictors),byrow=FALSE)
+  X = cbind(1, x0 )
+  y <- as.matrix(predicted)
+  
+  # Calculate beta
+  beta <- matinv(t(X) %*% X) %*% t(X) %*% y
+  
+  # Calculate residuals
+  e <- y - X %*% beta
+  
+  # Calculate the residual variance
+  
+  k = ncol(X)
+  resid_var <- sqrt(sum(e^2) / (nrow(X) - k))
+  
+  #covariance of the matrix coefficient
+  
+  covar = resid_var * sqrt(diag(matinv(t(X) %*% X)))
+  
+  # Calculate the t-statistics for each coefficient
+  t_values <- beta / (covar)
+  #print(beta)
+  #print(t_values)
+  
+  # Calculate the two-sided p-values for each t-statistic
+  p_values <- 2 * pt(-abs(t_values), df = nrow(X) - k)
+  
+  # Combine the coefficients and their p-values into a data frame
+  results <- data.frame(coefficients = beta, p_values = p_values)
+  colnames(results) <- c("Beta","PVal")
+  rownames(results) = colnames(X)
+  rownames(results)[1] = ""
+  
+  n = nrow(X)
+  
+  MSE = resid_var^2
+  MST = sum((predicted - mean(predicted))^2)/(n-1)
+  
+  ASR2 = 1- (MSE/MST)
+  output = list(ASR2=ASR2, results=results)
+  # Return the results
+  return(output)
+}
+
+MLR = multiple_linear_reg(parameters[,c(1,2,4)], maindata)
+
+MLR
+
+
+```
+
+Choose either Forward or Backward subset selection and choose either adjusted R-squared or validation set, and then stick with this choice for the remaining problems.
+
+I am going to pick Forward Subset Selection and the adjusted R-squared value.
+
+```{r}
+#part b
+
+#forward subset selection function 
+forward <- function(predictors, predicted){
+  current_vars <- c()
+  bestmodel <- c()
+  bestR2adj <- -Inf #since adjusted r sqres could be less than zero, -inf works
+  bestparams = c()
+  
+  for (i in 1:ncol(predictors)) {
+    #print(i)
+    jbest = 0 
+    bestmodel.1 = c()
+    bestR2adj.1 = -Inf
+    currentvars.1 = 1:ncol(predictors) 
+    
+    if ( length(current_vars) > 0  ){
+      currentvars.1 = currentvars.1[-current_vars]
+    }
+    
+    for( j in currentvars.1) {
+     # print(j)
+      #print(c(current_vars, j ))
+       current_model <- multiple_linear_reg(predictors[,c(current_vars, j )], predicted)
+       currentadjr2 = current_model$ASR2
+
+       if(currentadjr2 > bestR2adj.1){
+         bestR2adj.1 = currentadjr2
+         bestmodel.1 = current_model$results
+         jbest = j
+       }
+    } 
+    current_vars = c(current_vars, jbest)
+    if(bestR2adj.1 > bestR2adj){
+      bestmodel = bestmodel.1
+      bestR2adj = bestR2adj.1
+      bestparams = current_vars
+    }
+  }
+  output = list(ASR2=bestR2adj,results=bestmodel, params = bestparams)
+  return(output)
+}
+
+
+
+
+```
+
+If we label the asset to be predicted as set A, and the other 5 stocks as sets B through F, then running a subset selection methodology, determine what is the best model for predicting the value of stock A using just the values of assets B through F for the first two months of the data. Then determine the R^2 value for this model and determine what the MSE is for the third month.
+```{r}
+X = head(parameters,49)
+y = head(maindata,49)
+
+forward1 = forward(X, y)
+
+MSE = function(x, y, params, model) {
+  x0= as.matrix(x[,params])
+  x = cbind(1, x0 )
+  colnames(x)[1] = ""
+  y = as.matrix(y)
+  beta = matrix(model$Beta)
+  #print(colnames(x))
+  #print(rownames(model)[-1])
+  #print(dim(x[c(1, rownames(model)[-1])]))
+  #print(beta)
+  #print(rownames(model))
+  #print(colnames(x))
+  #print(dim(x[,rownames(model)]))
+  yhat = x %*% beta
+  #print(dim(y))
+  #print(dim(yhat))
+  resid = y - yhat
+  return(mean(resid^2))
+}
+
+
+MSE(tail(parameters,13),tail(maindata,13),forward1$params,forward1$results)
+```
+
+
+Repeat step 3, but also include the squares of the stock prices (so you will have 10 predictors, e.g. B, B^2, C, C^2, etc.).
+
+```{r}
+parameters = data.frame(PXDadj, TTDadj, GOOGadj, ZGadj, METAadj)
+
+parameters1 = cbind(parameters, parameters^2)
+
+forward2 = forward(parameters1, maindata)
+
+forward2
+```
+Repeat step 4, but also include the square roots of the stock prices (so you will have 15 predictors).
+```{r}
+parameters2 = cbind(sqrt(parameters), parameters1)
+forward3 = forward(parameters2, maindata)
+
+forward3
+```
+Looking over your results for 3, 4 and 5, what is the best model that you created? Provide your reasoning for why you believe that the one you chose is the best model.
+```{r}
+#The best model we created was the model 5 but by barely. The way you can tell which model is the best is by looking at the adjusted r^2 value and taking the one which is the largest. In this case, the best model would have been 5 because it has an adjusted r^2 value of .9519459 But it is important to keep in mind that model 4 was barely worse because the adjusted r^2 value was .949002.
+```
+Add a new chunk by clicking the *Insert Chunk* button on the toolbar or by pressing *Cmd+Option+I*.
+
+When you save the notebook, an HTML file containing the code and output will be saved alongside it (click the *Preview* button or press *Cmd+Shift+K* to preview the HTML file). 
+
+The preview shows you a rendered HTML copy of the contents of the editor. Consequently, unlike *Knit*, *Preview* does not run any R code chunks. Instead, the output of the chunk when it was last run in the editor is displayed.
+
